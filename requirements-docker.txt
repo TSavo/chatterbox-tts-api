@@ -1,0 +1,8 @@
+# Requirements for local development with GPU support
+fastapi
+uvicorn
+chatterbox-tts
+
+# For Docker builds - these will be installed via Docker's pip
+torch>=2.0.0
+torchaudio>=2.0.0

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatterbox TTS Browser Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        textarea {
+            width: 100%;
+            min-height: 100px;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-family: inherit;
+            resize: vertical;
+        }
+        textarea:focus {
+            outline: none;
+            border-color: #007bff;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .control-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .control-item label {
+            margin: 0;
+            min-width: 120px;
+        }
+        input[type="range"] {
+            flex: 1;
+        }
+        .value-display {
+            min-width: 40px;
+            text-align: center;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .buttons {
+            text-align: center;
+            margin: 30px 0;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            margin: 0 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        button:hover:not(:disabled) {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .output {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .hidden {
+            display: none;
+        }
+        .status {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: center;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        audio {
+            width: 100%;
+            margin: 10px 0;
+        }
+        .audio-info {
+            font-size: 14px;
+            color: #666;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        .preset-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin: 20px 0;
+        }
+        .preset-btn {
+            background: #6c757d;
+            font-size: 14px;
+            padding: 8px 16px;
+        }
+        .preset-btn:hover {
+            background: #545b62;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 Chatterbox TTS Browser Demo</h1>
+        
+        <div class="form-group">
+            <label for="textInput">Text to Convert to Speech:</label>
+            <textarea id="textInput" placeholder="Enter your text here...">Hello! This is a demonstration of the Chatterbox TTS API running in your browser. You can adjust various parameters to customize the voice output.</textarea>
+        </div>
+        
+        <div class="preset-buttons">
+            <strong>Quick Presets:</strong>
+            <button class="preset-btn" onclick="applyPreset('calm')">😌 Calm</button>
+            <button class="preset-btn" onclick="applyPreset('excited')">🚀 Excited</button>
+            <button class="preset-btn" onclick="applyPreset('natural')">🎯 Natural</button>
+            <button class="preset-btn" onclick="applyPreset('dramatic')">🎭 Dramatic</button>
+        </div>
+        
+        <div class="controls">
+            <div class="control-item">
+                <label for="exaggeration">Emotion:</label>
+                <input type="range" id="exaggeration" min="0" max="2" step="0.1" value="0.7">
+                <span id="exaggerationValue" class="value-display">0.7</span>
+            </div>
+            <div class="control-item">
+                <label for="cfgWeight">Guidance:</label>
+                <input type="range" id="cfgWeight" min="0" max="1" step="0.1" value="0.6">
+                <span id="cfgWeightValue" class="value-display">0.6</span>
+            </div>
+            <div class="control-item">
+                <label for="temperature">Variation:</label>
+                <input type="range" id="temperature" min="0.1" max="2" step="0.1" value="1.0">
+                <span id="temperatureValue" class="value-display">1.0</span>
+            </div>
+        </div>
+        
+        <div class="buttons">
+            <button id="generateBtn" onclick="generateSpeech()">🎵 Generate Speech</button>
+            <button id="downloadBtn" onclick="downloadAudio()" class="hidden">💾 Download Audio</button>
+            <button onclick="checkHealth()">🏥 Check API Status</button>
+        </div>
+        
+        <div id="status"></div>
+        
+        <div id="output" class="output hidden">
+            <h3>Generated Audio:</h3>
+            <audio id="audioPlayer" controls></audio>
+            <div id="audioInfo" class="audio-info"></div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE_URL = 'http://localhost:8000';
+        let currentAudioBlob = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            updateSliderValues();
+            checkHealth();
+        });
+
+        // Update slider value displays
+        function updateSliderValues() {
+            const sliders = ['exaggeration', 'cfgWeight', 'temperature'];
+            sliders.forEach(id => {
+                const slider = document.getElementById(id);
+                const display = document.getElementById(id + 'Value');
+                
+                slider.oninput = function() {
+                    display.textContent = this.value;
+                };
+            });
+        }
+
+        // Preset configurations
+        const presets = {
+            calm: { exaggeration: 0.2, cfgWeight: 0.3, temperature: 0.8 },
+            excited: { exaggeration: 1.2, cfgWeight: 0.8, temperature: 1.3 },
+            natural: { exaggeration: 0.5, cfgWeight: 0.5, temperature: 1.0 },
+            dramatic: { exaggeration: 1.5, cfgWeight: 0.9, temperature: 1.1 }
+        };
+
+        function applyPreset(presetName) {
+            const preset = presets[presetName];
+            if (preset) {
+                document.getElementById('exaggeration').value = preset.exaggeration;
+                document.getElementById('cfgWeight').value = preset.cfgWeight;
+                document.getElementById('temperature').value = preset.temperature;
+                
+                document.getElementById('exaggerationValue').textContent = preset.exaggeration;
+                document.getElementById('cfgWeightValue').textContent = preset.cfgWeight;
+                document.getElementById('temperatureValue').textContent = preset.temperature;
+                
+                showStatus(`Applied ${presetName} preset`, 'info');
+            }
+        }
+
+        async function checkHealth() {
+            showStatus('Checking API status...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`);
+                
+                if (response.ok) {
+                    const health = await response.json();
+                    showStatus(`✅ API is healthy! Device: ${health.device}, GPU: ${health.gpu_available ? 'Yes' : 'No'}`, 'success');
+                } else {
+                    showStatus(`❌ API health check failed (${response.status})`, 'error');
+                }
+            } catch (error) {
+                showStatus(`❌ Cannot connect to API. Make sure it's running: docker-compose up -d`, 'error');
+            }
+        }
+
+        async function generateSpeech() {
+            const text = document.getElementById('textInput').value.trim();
+            if (!text) {
+                showStatus('Please enter some text to convert.', 'error');
+                return;
+            }
+
+            const generateBtn = document.getElementById('generateBtn');
+            const originalText = generateBtn.textContent;
+            
+            try {
+                // Disable button and show loading
+                generateBtn.disabled = true;
+                generateBtn.textContent = '⏳ Generating...';
+                showStatus('Generating speech...', 'info');
+
+                const requestData = {
+                    text: text,
+                    exaggeration: parseFloat(document.getElementById('exaggeration').value),
+                    cfg_weight: parseFloat(document.getElementById('cfgWeight').value),
+                    temperature: parseFloat(document.getElementById('temperature').value),
+                    return_base64: false
+                };
+
+                const response = await fetch(`${API_BASE_URL}/tts`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(requestData)
+                });
+
+                if (response.ok) {
+                    // Get audio blob
+                    currentAudioBlob = await response.blob();
+                    
+                    // Create audio URL and set up player
+                    const audioUrl = URL.createObjectURL(currentAudioBlob);
+                    const audioPlayer = document.getElementById('audioPlayer');
+                    audioPlayer.src = audioUrl;
+                    
+                    // Show audio info
+                    const duration = response.headers.get('X-Audio-Duration') || 'unknown';
+                    const sampleRate = response.headers.get('X-Sample-Rate') || 'unknown';
+                    const fileSize = (currentAudioBlob.size / 1024).toFixed(1);
+                    
+                    document.getElementById('audioInfo').innerHTML = `
+                        <strong>Audio Information:</strong><br>
+                        Duration: ${duration}s | Sample Rate: ${sampleRate}Hz | Size: ${fileSize}KB<br>
+                        Parameters: Emotion=${requestData.exaggeration}, Guidance=${requestData.cfg_weight}, Variation=${requestData.temperature}
+                    `;
+                    
+                    // Show output section and download button
+                    document.getElementById('output').classList.remove('hidden');
+                    document.getElementById('downloadBtn').classList.remove('hidden');
+                    
+                    showStatus('✅ Speech generated successfully!', 'success');
+                    
+                } else {
+                    const errorText = await response.text();
+                    showStatus(`❌ Generation failed: ${errorText}`, 'error');
+                }
+                
+            } catch (error) {
+                showStatus(`❌ Error: ${error.message}`, 'error');
+            } finally {
+                // Re-enable button
+                generateBtn.disabled = false;
+                generateBtn.textContent = originalText;
+            }
+        }
+
+        function downloadAudio() {
+            if (currentAudioBlob) {
+                const url = URL.createObjectURL(currentAudioBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `chatterbox_tts_${Date.now()}.wav`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                showStatus('Audio file downloaded!', 'success');
+            } else {
+                showStatus('No audio to download. Generate speech first.', 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+            
+            // Auto-hide success and info messages
+            if (type === 'success' || type === 'info') {
+                setTimeout(() => {
+                    const currentStatus = statusDiv.querySelector('.status');
+                    if (currentStatus && currentStatus.textContent === message) {
+                        statusDiv.innerHTML = '';
+                    }
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>

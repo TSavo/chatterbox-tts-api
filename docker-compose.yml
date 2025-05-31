@@ -1,0 +1,18 @@
+services:
+  chatterbox-tts-api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./hf_cache:/root/.cache/huggingface
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility

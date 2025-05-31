@@ -1,0 +1,17 @@
+{
+  "name": "chatterbox-tts-examples",
+  "version": "1.0.0",
+  "description": "JavaScript examples for Chatterbox TTS API",
+  "main": "basic_usage.js",
+  "scripts": {
+    "test": "node basic_usage.js",
+    "start": "node basic_usage.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "form-data": "^4.0.0"
+  },
+  "keywords": ["tts", "text-to-speech", "chatterbox", "api", "examples"],
+  "author": "Chatterbox TTS API",
+  "license": "MIT"
+}
