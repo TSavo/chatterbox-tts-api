@@ -42,7 +42,7 @@ ESTIMATED_CHARS_PER_SECOND = 12  # Rough estimate for duration calculation
 app = FastAPI(
     title="Chatterbox TTS API",
     description="Advanced Text-to-Speech API with voice cloning and emotion control",
-    version="3.0.0"
+    version="1.1.0"
 )
 
 # Add CORS middleware
@@ -274,7 +274,7 @@ async def root():
     """Health check endpoint"""
     return {
         "message": "Chatterbox TTS API is running",
-        "version": "3.0.0",
+        "version": "1.1.0",
         "device": device,
         "model_loaded": model is not None,
         "queue_size": job_queue.qsize(),
