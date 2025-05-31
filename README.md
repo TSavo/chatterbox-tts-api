@@ -1,298 +1,149 @@
 # Chatterbox TTS API
 
-[![Python](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 [![Docker](https://img.shields.io/badge/docker-%230db7ed.svg)](https://www.docker.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/TSavo/chatterbox-tts-api?style=social)](https://github.com/TSavo/chatterbox-tts-api/stargazers)
+[![Docker Pulls](https://img.shields.io/docker/pulls/tsavo/chatterbox-tts-api)](https://hub.docker.com/r/tsavo/chatterbox-tts-api)
 
-A high-performance, production-ready Text-to-Speech (TTS) API service built with FastAPI and powered by Chatterbox TTS. Features advanced voice cloning, emotion control, and batch processing capabilities.
+> 🎤 **Production-ready TTS API with voice cloning in one Docker command**
 
-## ✨ Features
-
-- 🎯 **Advanced TTS Generation**: High-quality text-to-speech with emotion control
-- 🎭 **Voice Cloning**: Clone any voice from a reference audio sample
-- 🚀 **Batch Processing**: Process multiple texts simultaneously for efficiency
-- 🎛️ **Fine-grained Control**: Adjust exaggeration, guidance weight, and temperature
-- 🔧 **Multiple Output Formats**: Support for WAV, MP3, and OGG formats
-- 📦 **Base64 Encoding**: Optional base64 output for web applications
-- 🐳 **Docker Ready**: Easy deployment with Docker and Docker Compose
-- 🚀 **GPU Accelerated**: Automatic GPU detection and utilization
-- 📊 **Health Monitoring**: Built-in health checks and status endpoints
-- 🔒 **Production Ready**: Comprehensive error handling and logging
+High-quality text-to-speech with voice cloning, emotion control, and batch processing.
 
 ## 🚀 Quick Start
 
-### Option 1: Docker (Recommended)
+**Run it now:**
+```bash
+docker run -p 8000:8000 tsavo/chatterbox-tts-api
+```
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/TSavo/chatterbox-tts-api.git
-   cd chatterbox-tts-api
-   ```
+That's it! API is now running at http://localhost:8000
 
-2. **Run with Docker Compose**
-   ```bash
-   # For CPU-only deployment
-   docker-compose up -d
-   
-   # For GPU-accelerated deployment
-   docker-compose -f docker-compose.gpu.yml up -d
-   ```
+**Test it:**
+```bash
+curl -X POST http://localhost:8000/tts \
+  -H "Content-Type: application/json" \
+  -d '{"text": "Hello world!"}' \
+  --output hello.wav
+```
 
-3. **Access the API**
-   - API: http://localhost:8000
-   - Interactive docs: http://localhost:8000/docs
-   - Health check: http://localhost:8000/health
+## ✨ Features
 
-### Option 2: Local Installation
+- 🎭 **Voice Cloning** - Clone any voice from audio samples
+- 🎛️ **Emotion Control** - Adjust intensity and expression
+- 🔧 **Multiple Formats** - WAV, MP3, OGG output
+- 🚀 **Batch Processing** - Handle multiple requests efficiently
+- 📊 **Job Tracking** - Monitor processing status
+- 🧩 **Smart Chunking** - Automatically handles long texts (40+ seconds)
+- 🐳 **Docker Ready** - No setup required
 
-1. **Install Python 3.12+**
+## 📖 Usage Examples
 
-2. **Clone and setup**
-   ```bash
-   git clone https://github.com/TSavo/chatterbox-tts-api.git
-   cd chatterbox-tts-api
-   
-   # For Windows (PowerShell)
-   .\setup-local.ps1
-   
-   # For Unix/Linux/macOS
-   pip install -r requirements.txt
-   # Install PyTorch with CUDA support (optional)
-   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-   ```
-
-3. **Run the application**
-   ```bash
-   python -m uvicorn app:app --host 0.0.0.0 --port 8000
-   ```
-
-## 📖 API Usage
-
-### Basic TTS Generation
-
+**Basic TTS:**
 ```python
 import requests
 
-# Simple text-to-speech
 response = requests.post("http://localhost:8000/tts", json={
-    "text": "Hello, world! This is a test of the Chatterbox TTS system.",
-    "exaggeration": 0.7,
-    "cfg_weight": 0.6,
-    "temperature": 1.0,
-    "return_base64": False
+    "text": "Hello, this is a test!",
+    "output_format": "mp3"
 })
 
-# Save the audio
-with open("output.wav", "wb") as f:
+with open("output.mp3", "wb") as f:
     f.write(response.content)
 ```
 
-### Voice Cloning
-
+**Voice Cloning:**
 ```python
-import requests
-
-# Clone a voice from reference audio
 with open("reference_voice.wav", "rb") as audio_file:
     response = requests.post(
         "http://localhost:8000/voice-clone",
-        data={
-            "text": "This will sound like the reference voice!",
-            "exaggeration": 0.5,
-            "return_base64": True
-        },
+        data={"text": "Clone this voice!"},
         files={"audio_file": audio_file}
     )
-
-result = response.json()
-# result["audio_base64"] contains the generated audio
 ```
 
-### Batch Processing
-
+**Batch Processing:**
 ```python
-import requests
-
-# Process multiple texts at once
 response = requests.post("http://localhost:8000/batch-tts", json={
-    "texts": [
-        "First sentence to convert.",
-        "Second sentence to convert.",
-        "Third sentence to convert."
-    ],
-    "exaggeration": 0.6,
-    "cfg_weight": 0.5
+    "texts": ["First sentence", "Second sentence", "Third sentence"]
 })
-
-results = response.json()
-for i, result in enumerate(results["results"]):
-    if result["success"]:
-        print(f"Text {i+1}: Generated {result['duration_seconds']:.2f}s of audio")
 ```
 
-## 🎛️ Configuration Parameters
+More examples: [examples/](examples/) | Interactive docs: http://localhost:8000/docs
 
-| Parameter | Description | Range | Default |
-|-----------|-------------|-------|---------|
-| `exaggeration` | Controls emotional intensity and expression | 0.0 - 2.0 | 0.5 |
-| `cfg_weight` | Controls generation guidance and pacing | 0.0 - 1.0 | 0.5 |
-| `temperature` | Controls randomness in generation | 0.1 - 2.0 | 1.0 |
-| `output_format` | Audio output format | wav, mp3, ogg | wav |
-| `return_base64` | Return audio as base64 string | boolean | false |
+## 🧩 Smart Text Chunking
 
-## 📖 Examples and Usage
+The API automatically handles long texts that would exceed the 40-second TTS limit:
 
-Comprehensive examples are available for multiple programming languages:
+**How it works:**
+1. **Estimates duration** from text length
+2. **Intelligently splits** on natural boundaries:
+   - Paragraph breaks (double line breaks)
+   - Sentence endings (periods, !, ?)
+   - Clause breaks (commas, semicolons, colons)
+   - Word boundaries (last resort)
+3. **Generates each chunk** separately
+4. **Concatenates with ffmpeg** into seamless audio
 
-### Quick Examples After `docker-compose up`
+**Example with long text:**
+```python
+long_text = """
+Very long article or document content here...
+Multiple paragraphs with natural breaks...
+The system will automatically chunk this.
+"""
 
-- **Python**: See [examples/python/](examples/python/) for complete examples
-- **JavaScript/Node.js**: See [examples/javascript/](examples/javascript/) for both Node.js and browser examples
-- **cURL**: See [examples/curl/](examples/curl/) for command-line testing
-- **PHP**: See [examples/php/](examples/php/) for web integration examples
+# Will automatically chunk, generate, and concatenate
+response = requests.post("http://localhost:8000/tts", json={
+    "text": long_text,
+    "output_format": "mp3"
+})
+# Returns single audio file with complete text
+```
 
-### Quick Test
+## 🎛️ Parameters
 
-**Option 1: Use the quickstart scripts**
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `exaggeration` | Emotional intensity (0.0-2.0) | 0.5 |
+| `cfg_weight` | Generation guidance (0.0-1.0) | 0.5 |
+| `temperature` | Randomness (0.1-2.0) | 1.0 |
+| `output_format` | Audio format (wav, mp3, ogg) | wav |
+
+## 🔧 Advanced Setup
+
+**With GPU support:**
 ```bash
-# Linux/macOS
-./quickstart.sh
-
-# Windows PowerShell
-./quickstart.ps1
+docker run --gpus all -p 8000:8000 tsavo/chatterbox-tts-api
 ```
 
-**Option 2: Manual testing**
+**Test the chunking feature:**
 ```bash
-# Test if API is running
-curl http://localhost:8000/health
-
-# Check queue status (NEW in v3.0)
-curl http://localhost:8000/queue/status
-
-# Generate speech with job tracking
-curl -X POST http://localhost:8000/tts \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello world!", "exaggeration": 0.7, "output_format": "mp3"}' \
-  --output "hello.mp3"
-
-# Generate with base64 response to get job ID
-curl -X POST http://localhost:8000/tts \
-  -H "Content-Type: application/json" \
-  -d '{"text": "Hello world!", "return_base64": true}' \
-  | jq '.job_id'
+# Test with long text (will automatically chunk and concatenate)
+python test_chunking.py
 ```
 
-## 🔧 API Endpoints
-
-### Core Endpoints
-
-- `POST /tts` - Generate speech from text with advanced controls
-- `POST /voice-clone` - Generate speech with voice cloning
-- `POST /batch-tts` - Process multiple texts simultaneously
-
-### Monitoring
-
-- `GET /` - Basic health check with queue information
-- `GET /health` - Detailed health check with model status
-- `GET /queue/status` - Get current queue status
-- `GET /docs` - Interactive API documentation
-
-## 🐳 Docker Configuration
-
-### Environment Variables
-
+**Development/Custom builds:**
 ```bash
-# GPU Support (optional)
-NVIDIA_VISIBLE_DEVICES=all
-NVIDIA_DRIVER_CAPABILITIES=compute,utility
-
-# Model caching (optional)
-HF_HOME=/app/hf_cache
+git clone https://github.com/TSavo/chatterbox-tts-api.git
+cd chatterbox-tts-api
+docker-compose up
 ```
 
-### Volume Mounts
+**System Requirements:**
+- Docker (includes ffmpeg for audio concatenation)
+- 4GB+ RAM (8GB recommended)
+- GPU optional but recommended
 
-- `./hf_cache:/root/.cache/huggingface` - Cache model downloads
+## 📞 Support
 
-## 🔧 Development
-
-### Project Structure
-
-```
-chatterbox-tts-api/
-├── app.py                 # Main FastAPI application
-├── requirements.txt       # Python dependencies
-├── requirements-docker.txt # Docker-specific dependencies
-├── Dockerfile            # Optimized Docker image configuration
-├── docker-compose.yml    # Docker deployment
-├── .github/workflows/     # CI/CD pipeline
-├── tests/                # Test suite
-├── examples/             # Usage examples
-├── test_mp3_sync.py      # Synchronous MP3 test script
-└── .gitignore           # Git ignore rules
-```
-
-### Running Tests
-
-```bash
-# Run the test suite
-python -m pytest tests/
-
-# Run specific tests
-python chatterbox_test.py
-python test_gpu.py
-```
-
-### Contributing
-
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## 📋 Requirements
-
-### System Requirements
-
-- **Python**: 3.12 or higher
-- **Memory**: 4GB RAM minimum, 8GB recommended
-- **GPU**: NVIDIA GPU with CUDA support (optional but recommended)
-- **Storage**: 2GB for model cache
-
-### Dependencies
-
-- FastAPI and Uvicorn for the web framework
-- PyTorch and TorchAudio for audio processing
-- Chatterbox TTS for the core TTS functionality
-
-## 🚨 Known Issues & Limitations
-
-- Initial model loading may take 1-2 minutes on first run
-- Large batch requests may timeout on slower hardware
-- Some audio formats may require additional system codecs
-- GPU memory usage scales with batch size and audio length
-
-## 📞 Support & Community
-
-- 📖 **[API Documentation](http://localhost:8000/docs)** - Interactive API documentation
-- 🐛 **[Report Issues](https://github.com/TSavo/chatterbox-tts-api/issues)** - Bug reports and feature requests
-- 💬 **[GitHub Discussions](https://github.com/TSavo/chatterbox-tts-api/discussions)** - Community discussions
-- 📧 **[Contact Author](mailto:listentomy@nefariousplan.com)** - Direct support
-
-## 🙏 Acknowledgments
-
-- **[Chatterbox TTS](https://github.com/JarodMica/chatterbox)** - For the amazing TTS model
-- **[FastAPI](https://fastapi.tiangolo.com/)** - For the excellent web framework
-- **[PyTorch](https://pytorch.org/)** - For the deep learning foundation
-- **All contributors** - Thank you for making this project better!
+- 📖 **[Interactive API Docs](http://localhost:8000/docs)** - Try the API in your browser
+- 🐛 **[Issues](https://github.com/TSavo/chatterbox-tts-api/issues)** - Bug reports and feature requests  
+- 💬 **[Discussions](https://github.com/TSavo/chatterbox-tts-api/discussions)** - Community help
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Created with ❤️ by [T Savo](mailto:listentomy@nefariousplan.com)**
-
-🌐 **[Horizon City](https://www.horizon-city.com)** - *Ushering in the AI revolution and hastening the extinction of humans*
-
-*Making high-quality TTS accessible to every developer - one API call closer to human obsolescence*
+**[T Savo](mailto:listentomy@nefariousplan.com)** • **[Horizon City](https://www.horizon-city.com)**

@@ -3,3 +3,6 @@ uvicorn
 chatterbox-tts
 # PyTorch with CUDA support - install manually with:
 # pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# System requirements:
+# - ffmpeg (required for audio concatenation of long texts)

@@ -15,6 +15,8 @@ from enum import Enum
 from chatterbox.tts import ChatterboxTTS
 import subprocess
 import shutil
+import re
+import math
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +33,11 @@ class TTSJob:
 # Global queue for processing
 job_queue = asyncio.Queue()
 total_jobs_processed = 0
+
+# Audio generation limits
+COMFORTABLE_DURATION = 25.0  # Target duration for optimal quality
+MAX_DURATION_HARD_LIMIT = 40.0  # Hard limit - must chunk beyond this
+ESTIMATED_CHARS_PER_SECOND = 12  # Rough estimate for duration calculation
 
 app = FastAPI(
     title="Chatterbox TTS API",
@@ -295,23 +302,364 @@ async def health_check():
             "error": str(e)
         }
 
+def _estimate_audio_duration(text: str) -> float:
+    """Estimate audio duration based on text length"""
+    # Remove extra whitespace and count characters
+    clean_text = re.sub(r'\s+', ' ', text.strip())
+    char_count = len(clean_text)
+    
+    # Rough estimation: ~12 characters per second of speech
+    estimated_duration = char_count / ESTIMATED_CHARS_PER_SECOND
+    return estimated_duration
+
+def _chunk_text_smartly(text: str, comfortable_duration: float = COMFORTABLE_DURATION) -> List[str]:
+    """
+    Intelligently chunk text with respect for sentence boundaries.
+    
+    Strategy:
+    - Under 25s: Don't chunk (comfortable)
+    - 25-40s: Try to find good break points, but don't force chunking
+    - Over 40s: Must chunk, but still respect sentence boundaries
+    
+    Splits on:
+    1. Double line breaks (paragraphs)
+    2. Single line breaks
+    3. Sentence endings (. ! ?) - preferred break points
+    4. Clause breaks (, ; :) - only if necessary
+    5. Word boundaries - last resort
+    """
+    estimated_duration = _estimate_audio_duration(text)
+    
+    # If text is comfortably short, don't chunk
+    if estimated_duration <= comfortable_duration:
+        return [text.strip()]
+    
+    # If moderately long but under hard limit, try gentle chunking
+    if estimated_duration <= MAX_DURATION_HARD_LIMIT:
+        # Try to find natural paragraph or sentence breaks
+        gentle_chunks = _try_gentle_chunking(text, comfortable_duration)
+        if gentle_chunks and len(gentle_chunks) > 1:
+            return gentle_chunks
+        else:
+            # No good break points found, keep as single chunk
+            return [text.strip()]
+    
+    # Over hard limit - must chunk aggressively but smartly
+    return _aggressive_chunking(text, comfortable_duration)
+
+def _try_gentle_chunking(text: str, target_duration: float) -> List[str]:
+    """Try to find natural break points without forcing chunking"""
+    chunks = []
+    
+    # First try paragraph breaks
+    paragraphs = re.split(r'\n\s*\n', text)
+    if len(paragraphs) > 1:
+        current_chunk = ""
+        for paragraph in paragraphs:
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+                
+            test_chunk = (current_chunk + "\n\n" + paragraph) if current_chunk else paragraph
+            
+            # If adding this paragraph keeps us reasonable, add it
+            if _estimate_audio_duration(test_chunk) <= MAX_DURATION_HARD_LIMIT:
+                current_chunk = test_chunk
+            else:
+                # Save current chunk and start new one
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = paragraph
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        return [chunk.strip() for chunk in chunks if chunk.strip()]
+    
+    # No paragraph breaks, try sentence breaks
+    sentences = re.split(r'([.!?]+)', text)
+    if len(sentences) > 2:  # At least one sentence break
+        current_chunk = ""
+        
+        for i in range(0, len(sentences), 2):
+            if i + 1 < len(sentences):
+                sentence = sentences[i] + sentences[i + 1]  # Include punctuation
+            else:
+                sentence = sentences[i]
+            
+            sentence = sentence.strip()
+            if not sentence:
+                continue
+            
+            test_chunk = (current_chunk + " " + sentence) if current_chunk else sentence
+            
+            # If this sentence would put us way over, break before it
+            if current_chunk and _estimate_audio_duration(test_chunk) > MAX_DURATION_HARD_LIMIT:
+                chunks.append(current_chunk)
+                current_chunk = sentence
+            else:
+                current_chunk = test_chunk
+        
+        if current_chunk:
+            chunks.append(current_chunk)
+        
+        # Only return if we actually found reasonable break points
+        if len(chunks) > 1:
+            return [chunk.strip() for chunk in chunks if chunk.strip()]
+    
+    # No good natural breaks found
+    return []
+
+def _aggressive_chunking(text: str, target_duration: float) -> List[str]:
+    """Aggressively chunk text that's over the hard limit"""
+    chunks = []
+    
+    # First split on paragraphs (double line breaks)
+    paragraphs = re.split(r'\n\s*\n', text)
+    
+    for paragraph in paragraphs:
+        paragraph = paragraph.strip()
+        if not paragraph:
+            continue
+            
+        # If paragraph is under target, add it
+        if _estimate_audio_duration(paragraph) <= target_duration:
+            chunks.append(paragraph)
+            continue
+        
+        # If paragraph is moderately long but under hard limit, try to keep it
+        if _estimate_audio_duration(paragraph) <= MAX_DURATION_HARD_LIMIT:
+            # Try sentence-level splitting first
+            sentence_chunks = _split_long_text(paragraph, target_duration)
+            chunks.extend(sentence_chunks)
+        else:
+            # Paragraph is very long, must split aggressively
+            para_chunks = _split_long_text(paragraph, target_duration)
+            chunks.extend(para_chunks)
+    
+    return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+def _split_long_text(text: str, max_duration: float) -> List[str]:
+    """Split text that's too long on sentence and clause boundaries"""
+    if _estimate_audio_duration(text) <= max_duration:
+        return [text]
+    
+    chunks = []
+    
+    # Split on sentence endings first
+    sentences = re.split(r'([.!?]+)', text)
+    current_chunk = ""
+    
+    for i in range(0, len(sentences), 2):
+        if i + 1 < len(sentences):
+            sentence = sentences[i] + sentences[i + 1]  # Include punctuation
+        else:
+            sentence = sentences[i]
+        
+        sentence = sentence.strip()
+        if not sentence:
+            continue
+        
+        test_chunk = (current_chunk + " " + sentence) if current_chunk else sentence
+        
+        if _estimate_audio_duration(test_chunk) <= max_duration:
+            current_chunk = test_chunk
+        else:
+            # Save current chunk if it exists
+            if current_chunk:
+                chunks.append(current_chunk)
+            
+            # Check if sentence itself is too long
+            if _estimate_audio_duration(sentence) <= max_duration:
+                current_chunk = sentence
+            else:
+                # Split on clause boundaries
+                clause_chunks = _split_on_clauses(sentence, max_duration)
+                chunks.extend(clause_chunks[:-1])
+                current_chunk = clause_chunks[-1]
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+def _split_on_clauses(text: str, max_duration: float) -> List[str]:
+    """Split text on clause boundaries (commas, semicolons, colons)"""
+    if _estimate_audio_duration(text) <= max_duration:
+        return [text]
+    
+    chunks = []
+    
+    # Split on clause markers
+    clauses = re.split(r'([,;:]+)', text)
+    current_chunk = ""
+    
+    for i in range(0, len(clauses), 2):
+        if i + 1 < len(clauses):
+            clause = clauses[i] + clauses[i + 1]  # Include punctuation
+        else:
+            clause = clauses[i]
+        
+        clause = clause.strip()
+        if not clause:
+            continue
+        
+        test_chunk = (current_chunk + " " + clause) if current_chunk else clause
+        
+        if _estimate_audio_duration(test_chunk) <= max_duration:
+            current_chunk = test_chunk
+        else:
+            if current_chunk:
+                chunks.append(current_chunk)
+            
+            # Last resort: split on word boundaries
+            if _estimate_audio_duration(clause) <= max_duration:
+                current_chunk = clause
+            else:
+                word_chunks = _split_on_words(clause, max_duration)
+                chunks.extend(word_chunks[:-1])
+                current_chunk = word_chunks[-1]
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+def _split_on_words(text: str, max_duration: float) -> List[str]:
+    """Split text on word boundaries as last resort"""
+    words = text.split()
+    chunks = []
+    current_chunk = ""
+    
+    for word in words:
+        test_chunk = (current_chunk + " " + word) if current_chunk else word
+        
+        if _estimate_audio_duration(test_chunk) <= max_duration:
+            current_chunk = test_chunk
+        else:
+            if current_chunk:
+                chunks.append(current_chunk)
+            current_chunk = word
+    
+    if current_chunk:
+        chunks.append(current_chunk)
+    
+    return [chunk.strip() for chunk in chunks if chunk.strip()]
+
+def _concatenate_audio_files(audio_files: List[str], output_path: str, sample_rate: int) -> None:
+    """Concatenate multiple audio files using ffmpeg"""
+    if not audio_files:
+        raise ValueError("No audio files to concatenate")
+    
+    if len(audio_files) == 1:
+        # Just copy the single file
+        shutil.copy2(audio_files[0], output_path)
+        return
+    
+    # Check if ffmpeg is available
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError("ffmpeg is required for audio concatenation but not found in PATH")
+    
+    try:
+        # Create a temporary file list for ffmpeg
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            filelist_path = f.name
+            for audio_file in audio_files:
+                # Escape paths for ffmpeg
+                escaped_path = audio_file.replace("'", "'\"'\"'")
+                f.write(f"file '{escaped_path}'\n")
+        
+        # Use ffmpeg to concatenate
+        subprocess.run([
+            "ffmpeg", 
+            "-f", "concat", 
+            "-safe", "0",
+            "-i", filelist_path,
+            "-c", "copy",
+            "-y", output_path
+        ], check=True, capture_output=True)
+        
+    except subprocess.CalledProcessError as e:
+        logger.error(f"ffmpeg concatenation failed: {e.stderr.decode()}")
+        raise RuntimeError(f"Audio concatenation failed: {e.stderr.decode()}")
+    finally:
+        # Clean up filelist
+        if os.path.exists(filelist_path):
+            os.unlink(filelist_path)
+
 def _generate_audio(text: str, exaggeration: float = 0.5, cfg_weight: float = 0.5,
                    temperature: float = 1.0, audio_prompt_path: Optional[str] = None):
-    """Helper function to generate audio with parameters"""
+    """Helper function to generate audio with automatic chunking for long texts"""
     try:
-        # Build generation parameters
-        kwargs = {
-            "exaggeration": exaggeration,
-            "cfg_weight": cfg_weight,
-            "temperature": temperature
-        }
-
-        # Add audio prompt if provided
-        if audio_prompt_path:
-            kwargs["audio_prompt_path"] = audio_prompt_path
-
-        wav = get_model().generate(text, **kwargs)
-        return wav
+        # Check if text needs chunking
+        estimated_duration = _estimate_audio_duration(text)
+        
+        if estimated_duration <= MAX_DURATION_HARD_LIMIT:
+            # Text is manageable, generate normally (even if over comfortable duration)
+            kwargs = {
+                "exaggeration": exaggeration,
+                "cfg_weight": cfg_weight,
+                "temperature": temperature
+            }
+            
+            if audio_prompt_path:
+                kwargs["audio_prompt_path"] = audio_prompt_path
+            
+            wav = get_model().generate(text, **kwargs)
+            return wav
+        
+        else:
+            # Text is definitely too long, chunk it
+            logger.info(f"Text estimated at {estimated_duration:.1f}s, chunking for audio generation")
+            chunks = _chunk_text_smartly(text, COMFORTABLE_DURATION)
+            logger.info(f"Split into {len(chunks)} chunks")
+            
+            # Generate audio for each chunk
+            temp_audio_files = []
+            model_instance = get_model()
+            
+            try:
+                for i, chunk in enumerate(chunks):
+                    logger.info(f"Generating chunk {i+1}/{len(chunks)}: {chunk[:50]}...")
+                    
+                    kwargs = {
+                        "exaggeration": exaggeration,
+                        "cfg_weight": cfg_weight,
+                        "temperature": temperature
+                    }
+                    
+                    # Only use audio prompt for the first chunk to maintain voice consistency
+                    if audio_prompt_path and i == 0:
+                        kwargs["audio_prompt_path"] = audio_prompt_path
+                    
+                    chunk_wav = model_instance.generate(chunk, **kwargs)
+                    
+                    # Save chunk to temporary file
+                    with tempfile.NamedTemporaryFile(suffix=f"_chunk_{i}.wav", delete=False) as tmp:
+                        ta.save(tmp.name, chunk_wav, model_instance.sr)
+                        temp_audio_files.append(tmp.name)
+                
+                # Concatenate all chunks
+                with tempfile.NamedTemporaryFile(suffix="_concatenated.wav", delete=False) as tmp:
+                    concatenated_path = tmp.name
+                
+                logger.info(f"Concatenating {len(temp_audio_files)} audio chunks")
+                _concatenate_audio_files(temp_audio_files, concatenated_path, model_instance.sr)
+                
+                # Load the concatenated audio
+                concatenated_wav, _ = ta.load(concatenated_path)
+                
+                # Clean up concatenated temp file
+                os.unlink(concatenated_path)
+                
+                return concatenated_wav
+                
+            finally:
+                # Clean up all temporary chunk files
+                for temp_file in temp_audio_files:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                        
     except Exception as e:
         logger.error(f"Audio generation failed: {e}")
         raise HTTPException(status_code=500, detail=f"Audio generation failed: {str(e)}")
